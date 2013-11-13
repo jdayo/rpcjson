@@ -1,4 +1,4 @@
-require 'net/http'
+require 'net/http/persistent'
 require 'uri'
 require 'json'
 
@@ -7,45 +7,47 @@ class RPC
     class Client
       class Error < RuntimeError
         attr_accessor :error
+
         def initialize(error)
           @error = error
         end
       end
 
-      def initialize(url, version = 2.0)
+      def initialize(url, version = 2.0, pool_size = 5, timeout = 5)
         @id = 1
         @uri = URI.parse(url)
         @version = version
         @connections = 0
-        @http = Net::HTTP.start(@uri.host, @uri.port)
+
+        @http_pool = ConnectionPool.new(:size => pool_size, :timeout => timeout) {
+          Net::HTTP::Persistent.new 'json-rpc'
+        }
       end
 
       def make_request(body)
-        @connections += 1
-        if @connections > 2000
-          @http.finish
-          @http = Net::HTTP.start(@uri.host, @uri.port)
+        response = nil
+        @http_pool.with do |http|
+          request = Net::HTTP::Post.new(@uri.request_uri)
+          if @uri.user != nil
+            request.basic_auth(@uri.user, @uri.password)
+          end
+          request.body = body
+          response = http.request(@uri, request)
         end
-        request = Net::HTTP::Post.new(@uri.request_uri)
-	if @uri.user != nil
-          request.basic_auth(@uri.user, @uri.password)
-	end
-	request.body = body
-	response = @http.request(request)
-        JSON( response.body )
+        JSON(response.body)
       end
 
       def method_missing(func, *args)
         json = {
-          # jsonrpc
-          # A String specifying the version of the JSON-RPC protocol. MUST be exactly "2.0". 
-          'jsonrpc' => @version.to_s,
-          # method
-          # A String containing the name of the method to be invoked.
-          'method' => func,
-          # id
-          # An identifier established by the Client that MUST contain a String, Number, or NULL value if included. If it is not included it is assumed to be a notification. The value SHOULD normally not be Null [1] and Numbers SHOULD NOT contain fractional parts [2]
-          'id' => @id
+            # jsonrpc
+            # A String specifying the version of the JSON-RPC protocol. MUST be exactly "2.0".
+            'jsonrpc' => @version.to_s,
+            # method
+            # A String containing the name of the method to be invoked.
+            'method' => func,
+            # id
+            # An identifier established by the Client that MUST contain a String, Number, or NULL value if included. If it is not included it is assumed to be a notification. The value SHOULD normally not be Null [1] and Numbers SHOULD NOT contain fractional parts [2]
+            'id' => @id
         }
 
         # 1.0/1.1:
@@ -64,10 +66,10 @@ class RPC
 
         answer = nil
 
-        begin 
-          answer = self.make_request( body )
+        begin
+          answer = self.make_request(body)
         rescue Timeout::Error
-          answer = self.make_request( body )
+          answer = self.make_request(body)
         end
         # 1.0/1.1
         # jsonrpc: NOT INCLUDED
@@ -113,7 +115,7 @@ class RPC
         # result
         # This member is REQUIRED on success.
         # This member MUST NOT exist if there was an error invoking the method.
-        # The value of this member is determined by the method invoked on the Server. 
+        # The value of this member is determined by the method invoked on the Server.
         return answer['result']
       end
     end

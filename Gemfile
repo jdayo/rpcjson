@@ -2,6 +2,8 @@ source "http://rubygems.org"
 # Add dependencies required to use your gem here.
 # Example:
 gem "json", ">= 0"
+gem "net-http-persistent", ">= 0"
+gem "connection_pool", ">= 0"
 
 # Add dependencies to develop your gem here.
 # Include everything needed to run rake, tests, features, etc.

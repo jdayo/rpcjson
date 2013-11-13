@@ -1,6 +1,7 @@
 # rcov generated
 coverage
 .idea
+.idea/**/*
 
 # rdoc generated
 rdoc
